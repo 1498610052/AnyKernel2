@@ -1,6 +1,3 @@
-# AnyKernel3 Ramdisk Mod Script
-# osm0sis @ xda-developers
-
 ## AnyKernel setup
 # begin properties
 properties() { '
@@ -13,51 +10,64 @@ do.cleanuponabort=0
 device.name1=sagit
 device.name2=chiron
 device.name3=dipper
-device.name4=polaris
-device.name5=
+device.name4=polairs
+device.name5=cepheus
 supported.versions=
-supported.patchlevels=
 '; } # end properties
 
 # shell variables
-block=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;
+block=/dev/block/bootdevice/by-name/boot;
 is_slot_device=0;
 ramdisk_compression=auto;
-
 
 ## AnyKernel methods (DO NOT CHANGE)
 # import patching functions/variables - see for reference
 . tools/ak3-core.sh;
 
-
 ## AnyKernel file attributes
 # set permissions/ownership for included ramdisk files
-set_perm_recursive 0 0 755 644 $ramdisk/*;
-set_perm_recursive 0 0 750 750 $ramdisk/init* $ramdisk/sbin;
-
+chmod -R 750 $ramdisk/*;
+chown -R root:root $ramdisk/*;
 
 ## AnyKernel install
 dump_boot;
-
 # begin ramdisk changes
 
-# init.rc
-backup_file init.rc;
-replace_string init.rc "cpuctl cpu,timer_slack" "mount cgroup none /dev/cpuctl cpu" "mount cgroup none /dev/cpuctl cpu,timer_slack";
+if [ ! -d .backup ]; then
+  $bin/magiskpolicy --load sepolicy --save sepolicy \
+  "allow init proc file { open write }" \
+  "allow init rootfs file execute_no_trans" \
+  "allow init sysfs file { open write }" \
+  "allow init sysfs_devices_system_cpu file write" \
+  "allow init sysfs_graphics file { open write }" \
+  "allow init default_prop property_service { set }" \
+  ;
+fi
 
-# init.tuna.rc
-backup_file init.tuna.rc;
-insert_line init.tuna.rc "nodiratime barrier=0" after "mount_all /fstab.tuna" "\tmount ext4 /dev/block/platform/omap/omap_hsmmc.0/by-name/userdata /data remount nosuid nodev noatime nodiratime barrier=0";
-append_file init.tuna.rc "bootscript" init.tuna;
-
-# fstab.tuna
-backup_file fstab.tuna;
-patch_fstab fstab.tuna /system ext4 options "noatime,barrier=1" "noatime,nodiratime,barrier=0";
-patch_fstab fstab.tuna /cache ext4 options "barrier=1" "barrier=0,nomblk_io_submit";
-patch_fstab fstab.tuna /data ext4 options "data=ordered" "nomblk_io_submit,data=writeback";
-append_file fstab.tuna "usbdisk" fstab;
-
+grep "import /init.qcom.rc" init.rc >/dev/null || sed -i '1,/.*import.*/s/.*import.*/import \/init.qcom.rc\n&/' init.rc
 # end ramdisk changes
 
 write_boot;
+
+if [ -z $(cat /system/vendor/etc/fstab.qcom | grep 'fileencryption=ice') ]; then
+  mv -f $home/system/vendor/etc/fstab.qcom.noice $home/system/vendor/etc/fstab.qcom;
+else
+  rm -f $home/system/vendor/etc/fstab.qcom.noice;
+fi
+chmod -R 644 $home/system/;
+
+mount -o rw,remount -t auto /system;
+cp -rf $home/system/* /system/;
+#rm -f /system/vendor/bin/init.qcom.post_boot.sh;
+chmod 755 /system/app/*
+chmod 755 /system/vendor/etc/perf;
+chmod 755 /system/vendor/etc/wifi;
+chmod 644 /system/vendor/etc/perf/*;
+chmod 644 /system/vendor/etc/wifi/*;
+chown root:shell /system/vendor/etc/perf;
+chown root:shell /system/vendor/etc/wifi;
+chown root:root /system/vendor/etc/perf/*;
+chown root:root /system/vendor/etc/wifi/*;
+mount -o ro,remount -t auto /system;
+
 ## end install
